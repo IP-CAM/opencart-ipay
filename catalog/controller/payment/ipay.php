@@ -1,0 +1,153 @@
+<?php
+class ControllerPaymentiPay extends Controller {
+	protected function index() {
+    	$this->language->load('payment/ipay');
+		 
+		$this->data['button_confirm'] = $this->language->get('button_confirm');
+		
+		
+		
+    	$this->data['button_confirm'] = $this->language->get('button_confirm');
+		
+		$this->data['action'] = $this->config->get('ipay_gateway');
+		
+		$this->load->model('checkout/order');
+		$order_info = $this->model_checkout_order->getOrder($this->session->data['order_id']);
+		
+		$data =& $this->data;
+			
+		/* 6.1 Essential Fields
+		 * The following parameters are required, and validated with each request. If one
+		 * is missing or the validation fails the customer will see an error page. The
+		 * merchant will also receive an email explaining the problem.
+		 */
+
+		/** Payment Page ID from the Administration Console
+		 *  Varies by merchant
+		 *	Maximum length 20, the Payment Page ID from the Administration Console. Case-sensitive.
+		 */
+		$data['x_merchant_key'] = $this->config->get('ipay_id');
+  
+		/** 
+		 * 
+		 * Positive number
+		 * Total dollar amount to be charged inclusive of freight and tax; Maximum Length 15
+		 * 
+		 * @var Positive number
+		 */
+		$data['x_amount'] = $this->currency->format($order_info['total'], $order_info['currency_code'], $order_info['currency_value'], false);	
+
+		/* 6.2 Transaction and Display Fields */
+		$mode = $this->config->get('ipay_test');
+		if ($mode == 'live') {
+			$data['x_live_order'] = True;
+		} 
+		
+		$data['x_currency_code'] = $this->currency->getCode();
+		
+		/* 6.3 Order and Customer Detail Fields */
+
+		/* Order Information Fields */
+		$data['x_invoice_id'] = $this->session->data['order_id'];
+		$data['x_description'] = ''; //html_entity_decode($this->config->get('config_name'), ENT_QUOTES, 'UTF-8');
+		
+		/* Customer Name and Billing Address Fields */
+		$data['x_first_name'] = html_entity_decode($order_info['payment_firstname'], ENT_QUOTES, 'UTF-8');
+		$data['x_last_name'] = html_entity_decode($order_info['payment_lastname'], ENT_QUOTES, 'UTF-8');
+		$data['x_company'] = html_entity_decode($order_info['payment_company'], ENT_QUOTES, 'UTF-8');
+		$data['x_address'] = html_entity_decode($order_info['payment_address_1'], ENT_QUOTES, 'UTF-8') . ' ' . html_entity_decode($order_info['payment_address_2'], ENT_QUOTES, 'UTF-8');
+		$data['x_city'] = html_entity_decode($order_info['payment_city'], ENT_QUOTES, 'UTF-8');
+		$data['x_state'] = html_entity_decode($order_info['payment_zone'], ENT_QUOTES, 'UTF-8');
+		$data['x_zip'] = html_entity_decode($order_info['payment_postcode'], ENT_QUOTES, 'UTF-8');
+		$data['x_country'] = html_entity_decode($order_info['payment_country'], ENT_QUOTES, 'UTF-8');
+		$data['x_phone'] = $order_info['telephone'];
+		
+		/* Customer Shipping Address Fields */
+		$data['x_ship_to_first_name'] = html_entity_decode($order_info['shipping_firstname'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_last_name'] = html_entity_decode($order_info['shipping_lastname'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_company'] = html_entity_decode($order_info['shipping_company'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_address'] = html_entity_decode($order_info['shipping_address_1'], ENT_QUOTES, 'UTF-8') . ' ' . html_entity_decode($order_info['shipping_address_2'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_city'] = html_entity_decode($order_info['shipping_city'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_state'] = html_entity_decode($order_info['shipping_zone'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_zip'] = html_entity_decode($order_info['shipping_postcode'], ENT_QUOTES, 'UTF-8');
+		$data['x_ship_to_country'] = html_entity_decode($order_info['shipping_country'], ENT_QUOTES, 'UTF-8');
+		
+		/* Additional Customer Data Field */
+		$data['x_customer_ip'] = $this->request->server['REMOTE_ADDR'];
+		$data['x_email'] = $order_info['email'];
+		
+		$data['x_store_url'] = $order_info['store_url'];
+		$data['x_store_name'] = $order_info['store_name'];
+		
+		
+		
+		if (file_exists(DIR_TEMPLATE . $this->config->get('config_template') . '/template/payment/ipay.tpl')) {
+			$this->template = $this->config->get('config_template') . '/template/payment/ipay.tpl';
+		} else {
+			$this->template = 'default/template/payment/ipay.tpl';
+		}	
+		
+		
+		$this->model_checkout_order->confirm($this->session->data['order_id'], $this->config->get('pending_order_status'));
+		
+		
+		$this->render();		
+	}
+
+
+	public function notify() {
+	    
+	    $details =& $this->request->post;
+	
+        if (isset($_GET['invoice_id'])) {
+        
+		    $this->load->model('checkout/order');
+		    $order_info = $this->model_checkout_order->getOrder($_GET['invoice_id']);
+        
+            $url = $this->config->get('ipay_gateway');
+            $url = rtrim($url, '/');
+            $url = substr($url, 0, strrpos($url, '/', -1)) . '/status_chk';
+            
+            $myvars = 'merchant_key=' . $this->config->get('ipay_id') . '&invoice_ids=' . $_GET['invoice_id'];
+
+            //$ch = curl_init( $url );
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL,$url);
+            curl_setopt( $ch, CURLOPT_FAILONERROR,1);
+            curl_setopt( $ch, CURLOPT_VERBOSE, 1);
+            curl_setopt( $ch, CURLOPT_POST, 1);
+            curl_setopt( $ch, CURLOPT_POSTFIELDS, $myvars);
+            //curl_setopt( $ch, CURLOPT_FOLLOWLOCATION, 1);
+            curl_setopt( $ch, CURLOPT_HEADER, 0);
+            curl_setopt( $ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+            
+            $response = curl_exec( $ch );
+            
+            curl_close($ch);
+            
+            
+            $response_params = explode('::', $response);
+            $my_order_id = $response_params[0];
+            $my_order_status = $response_params[1];
+            
+            if ( $my_order_status == 'paid' ){
+                $this->model_checkout_order->update(intval($my_order_id), $this->config->get('paid_order_status') );
+            }elseif ( $my_order_status == 'cancelled' ){
+                $this->model_checkout_order->update(intval($my_order_id), $this->config->get('cancelled_order_status') );
+            }
+            
+            echo $response;
+            echo "<br />" . intval($my_order_id);
+        }
+
+		echo 'At last';
+	}
+	
+
+
+	
+	
+}
+?>
